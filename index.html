@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>ZOAR FRAMES</title>
+  <style>
+    body { margin: 0; background: #000; }
+    #container { width: 100vw; height: 100vh; position: relative; overflow: hidden; }
+    #splash {
+      position: fixed; inset: 0; z-index: 20;
+      background: #000;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      transition: opacity 0.6s ease, visibility 0s 0s;
+      overflow: hidden;
+    }
+    #splash.hide {
+      opacity: 0; pointer-events: none; visibility: hidden;
+      transition: opacity 0.6s ease, visibility 0s 0.6s;   
+    }
+    #bgGif {
+      position: absolute; inset: 0;
+      overflow: hidden; pointer-events: none;
+    }
+    #bgGif::after {
+      content: ""; position: absolute; top: 0; left: 0;
+      width: 118%; height: 118%;   
+      background: url('sparkle.gif') center / cover no-repeat;
+    }
+    #logo {
+      position: relative; z-index: 1;
+      width: min(70vw, 340px); height: auto; display: block;
+    }
+    .logoText {
+      position: relative; z-index: 1;
+      color: #d9ad63; text-align: center;
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 54px; letter-spacing: 10px; line-height: 1;
+    }
+    .logoText small { display: block; margin-top: 10px; font-size: 16px; letter-spacing: 8px; }
+    #startBtn {
+      position: relative; z-index: 1;
+      margin-top: 16vh;
+      padding: 14px 34px; font-size: 20px; font-weight: 600;
+      border: none; border-radius: 12px;
+      color: #1c1306;
+      background: linear-gradient(180deg, #ebc47e, #cc9d57);
+      box-shadow: 0 0 22px rgba(224, 178, 100, 0.35);
+    }
+    #startBtn:disabled { opacity: 0.7; }
+    #controls {
+      position: fixed; z-index: 10;
+      left: 50%; transform: translateX(-50%);
+      bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+      display: none; gap: 10px;
+    }
+    #controls button {
+      padding: 12px 20px; font-size: 16px;
+      border: none; border-radius: 999px;
+      background: rgba(0, 0, 0, 0.65); color: #fff;
+    }
+  </style>
+  
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.150.1/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.150.1/examples/jsm/",
+      "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"
+    }
+  }
+  
+  
+  
+  </script>
+</head>
+<body>
+  <div id="container"></div>
+  <div id="splash">
+    <div id="bgGif"></div>
+    <img id="logo" src="logo.png" alt="ZOAR FRAMES"
+         onerror="this.outerHTML='<div class=&quot;logoText&quot;>ZOAR<small>FRAMES</small></div>'">
+    <button id="startBtn">Tap to Scan</button>
+  </div>
+  <div id="controls">
+    <button id="backBtn">Back</button>
+    <button id="playPauseBtn">Pause</button>
+    <button id="restartBtn">Restart</button>
+  </div>
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { MindARThree } from 'mindar-image-three';
+	
+	  document.addEventListener('contextmenu', function (e) {
+    e.preventDefault();
+  });
+  
+    const IMG_RATIO = 1.5494;
+    const video = document.createElement('video');
+    video.src = './video.mp4';
+    video.loop = true;
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
+    video.preload = 'auto';
+    const startBtn = document.querySelector('#startBtn');
+    const backBtn = document.querySelector('#backBtn');
+    const playPauseBtn = document.querySelector('#playPauseBtn');
+    const restartBtn = document.querySelector('#restartBtn');
+    const splash = document.querySelector('#splash');
+    const controls = document.querySelector('#controls');
+    const container = document.querySelector('#container');
+    let targetVisible = false;
+    let userPaused = false;   
+    let current = null;          
+    const refresh = () => {
+      if (targetVisible && !userPaused) video.play();
+      else video.pause();
+      playPauseBtn.textContent = userPaused ? 'Play' : 'Pause';
+    };
+    playPauseBtn.addEventListener('click', () => {
+      userPaused = !userPaused;
+      refresh();
+    });
+    restartBtn.addEventListener('click', () => {
+      video.currentTime = 0;
+      userPaused = false;
+      refresh();
+    });
+    const removeMindarUI = () => {
+      document
+        .querySelectorAll('.mindar-ui-overlay, .mindar-ui-scanning, .mindar-ui-loading, .mindar-ui-compatibility')
+        .forEach((el) => el.remove());
+    };
+    const start = async () => {     
+      removeMindarUI();
+      const mindarThree = new MindARThree({
+        container: container,
+        imageTargetSrc: './targets.mind',
+        filterMinCF: 0.001,     
+        filterBeta: 1000,       
+        warmupTolerance: 5,
+        missTolerance: 5,
+        uiLoading: 'no',      
+        uiScanning: 'yes',      
+        uiError: 'yes'
+      });
+      const { renderer, scene, camera } = mindarThree;
+      current = { mindarThree, renderer };
+      const videoTexture = new THREE.VideoTexture(video);
+      videoTexture.encoding = THREE.sRGBEncoding;
+      videoTexture.flipY = false;
+      const videoMaterial = new THREE.MeshBasicMaterial({
+        map: videoTexture,
+        side: THREE.DoubleSide
+      });
+      const gltf = await new GLTFLoader().loadAsync('./model.glb');
+      const plane = gltf.scene;
+      plane.traverse((o) => {
+        if (o.isMesh) o.material = videoMaterial;
+      }); 
+      const raw = new THREE.Box3().setFromObject(plane).getSize(new THREE.Vector3());
+      if (raw.y <= raw.x && raw.y <= raw.z) {
+        plane.rotation.x = Math.PI / 2;  
+      } else if (raw.x <= raw.y && raw.x <= raw.z) {
+        plane.rotation.y = Math.PI / 2;    
+      }                                    
+      const pivot = new THREE.Group();
+      pivot.add(plane);
+      pivot.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(pivot);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      plane.position.sub(center);          
+      pivot.scale.set(1 / size.x, IMG_RATIO / size.y, 1);   
+      pivot.position.z = 0.001;            
+      const anchor = mindarThree.addAnchor(0);
+      anchor.group.add(pivot);
+
+      anchor.onTargetFound = () => {
+        targetVisible = true;
+        refresh();
+      };
+      anchor.onTargetLost = () => {
+        targetVisible = false;
+        refresh();
+      };
+      await mindarThree.start();
+      controls.style.display = 'flex';
+      renderer.setAnimationLoop(() => {
+        renderer.render(scene, camera);
+      });
+    };
+    const goHome = () => {
+      video.pause();
+      video.currentTime = 0;
+      targetVisible = false;
+      userPaused = false;
+      playPauseBtn.textContent = 'Pause';
+      if (current) {
+        try { current.mindarThree.stop(); } catch (e) { console.warn(e); }
+        try { current.renderer.setAnimationLoop(null); current.renderer.dispose(); } catch (e) {}
+        current = null;
+      }
+      document.querySelectorAll('video').forEach((v) => {
+        if (v !== video && v.srcObject) {
+          try { v.srcObject.getTracks().forEach((t) => t.stop()); } catch (e) {}
+          v.srcObject = null;
+        }
+      });
+      container.innerHTML = '';
+      removeMindarUI();
+      controls.style.display = 'none';
+      startBtn.disabled = false;
+      startBtn.textContent = 'Tap to Scan';
+      splash.classList.remove('hide');
+    };
+    backBtn.addEventListener('click', goHome);
+    startBtn.addEventListener('click', async () => {
+      startBtn.disabled = true;
+      startBtn.textContent = 'Loading...';
+      video.play().then(() => video.pause()).catch(() => {});
+      try {
+        await start();                       
+        splash.classList.add('hide');       
+      } catch (e) {
+        console.error(e);
+        goHome();
+        alert('Please allow the camera');
+      }
+    });
+  </script>
+</body>
+</html>
